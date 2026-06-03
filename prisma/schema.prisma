@@ -1,0 +1,439 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  TECHNICIAN
+  RECEPTION
+  CUSTOMER
+}
+
+enum UserStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+}
+
+enum CustomerType {
+  WALK_IN
+  RESIDENTIAL
+  BUSINESS
+  WARRANTY
+}
+
+enum TechnicianStatus {
+  ACTIVE
+  ON_LEAVE
+  INACTIVE
+}
+
+enum RepairStatus {
+  RECEIVED
+  INSPECTION_PENDING
+  UNDER_INSPECTION
+  WAITING_FOR_PARTS
+  IN_REPAIR
+  TESTING
+  COMPLETED
+  READY_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum PhotoType {
+  INTAKE
+  BEFORE_REPAIR
+  INTERNAL
+  AFTER_REPAIR
+}
+
+enum NoteType {
+  INSPECTION
+  REPAIR
+  TESTING
+  CUSTOMER_COMMUNICATION
+  INTERNAL
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK_TRANSFER
+  MOBILE_PAYMENT
+}
+
+enum PaymentStatus {
+  DRAFT
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  VOID
+}
+
+enum StockMovementType {
+  STOCK_IN
+  STOCK_OUT
+  ADJUSTMENT
+  JOB_CONSUMPTION
+}
+
+enum NotificationChannel {
+  SMS
+  WHATSAPP
+  EMAIL
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum WarrantyClaimStatus {
+  OPEN
+  APPROVED
+  REJECTED
+  RESOLVED
+}
+
+model User {
+  id            String       @id @default(cuid())
+  name          String
+  email         String       @unique
+  passwordHash  String
+  role          Role
+  status        UserStatus   @default(ACTIVE)
+  image         String?
+  branchId      String?
+  branch        Branch?      @relation(fields: [branchId], references: [id])
+  technician    Technician?
+  customer      Customer?
+  sessions      Session[]
+  accounts      Account[]
+  createdJobs   RepairJob[]  @relation("CreatedBy")
+  auditLogs      AuditLog[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Branch {
+  id           String        @id @default(cuid())
+  name         String
+  code         String        @unique
+  address      String
+  phone        String
+  users        User[]
+  customers    Customer[]
+  technicians  Technician[]
+  repairJobs   RepairJob[]
+  inventory    SparePart[]
+  invoices     Invoice[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Customer {
+  id              String        @id @default(cuid())
+  customerCode    String        @unique
+  fullName        String
+  mobileNumber    String
+  alternateNumber String?
+  address         String
+  email           String?
+  customerType    CustomerType  @default(WALK_IN)
+  notes           String?
+  userId          String?       @unique
+  user            User?         @relation(fields: [userId], references: [id])
+  branchId        String
+  branch          Branch        @relation(fields: [branchId], references: [id])
+  repairJobs      RepairJob[]
+  invoices        Invoice[]
+  notifications   Notification[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([fullName])
+  @@index([mobileNumber])
+}
+
+model RepairCategory {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  description String?
+  isActive    Boolean      @default(true)
+  jobs        RepairJob[]
+  technicians Technician[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Technician {
+  id              String             @id @default(cuid())
+  name            String
+  mobileNumber    String
+  address         String
+  skillCategoryId String?
+  skillCategory   RepairCategory?    @relation(fields: [skillCategoryId], references: [id])
+  experience      String
+  status          TechnicianStatus   @default(ACTIVE)
+  userId          String?            @unique
+  user            User?              @relation(fields: [userId], references: [id])
+  branchId        String
+  branch          Branch             @relation(fields: [branchId], references: [id])
+  assignments     JobAssignment[]
+  notes           RepairNote[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+}
+
+model RepairJob {
+  id                   String             @id @default(cuid())
+  ticketNumber         String             @unique
+  customerId           String
+  customer             Customer           @relation(fields: [customerId], references: [id])
+  categoryId           String
+  category             RepairCategory     @relation(fields: [categoryId], references: [id])
+  branchId             String
+  branch               Branch             @relation(fields: [branchId], references: [id])
+  brand                String
+  modelNumber          String?
+  serialNumber         String?
+  productColor         String?
+  productCondition     String
+  accessoriesReceived  String?
+  problemDescription   String
+  receivedDate         DateTime           @default(now())
+  expectedDeliveryDate DateTime?
+  status               RepairStatus       @default(RECEIVED)
+  warrantyPeriodDays   Int?
+  warrantyExpiryDate   DateTime?
+  warrantyNotes        String?
+  createdById          String
+  createdBy            User               @relation("CreatedBy", fields: [createdById], references: [id])
+  assignments          JobAssignment[]
+  statusHistory        RepairStatusEvent[]
+  photos               RepairPhoto[]
+  notes                RepairNote[]
+  partsUsed            JobPartUsage[]
+  invoice              Invoice?
+  warrantyClaims       WarrantyClaim[]
+  notifications        Notification[]
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([ticketNumber])
+  @@index([serialNumber])
+  @@index([status])
+  @@index([receivedDate])
+}
+
+model JobAssignment {
+  id           String      @id @default(cuid())
+  repairJobId  String
+  repairJob    RepairJob   @relation(fields: [repairJobId], references: [id], onDelete: Cascade)
+  technicianId String
+  technician   Technician  @relation(fields: [technicianId], references: [id])
+  assignedAt   DateTime    @default(now())
+  unassignedAt DateTime?
+  isLead       Boolean     @default(false)
+
+  @@unique([repairJobId, technicianId])
+}
+
+model RepairStatusEvent {
+  id          String       @id @default(cuid())
+  repairJobId String
+  repairJob   RepairJob    @relation(fields: [repairJobId], references: [id], onDelete: Cascade)
+  status      RepairStatus
+  notes       String?
+  createdBy   String
+  createdAt   DateTime     @default(now())
+}
+
+model RepairPhoto {
+  id          String      @id @default(cuid())
+  repairJobId String
+  repairJob   RepairJob   @relation(fields: [repairJobId], references: [id], onDelete: Cascade)
+  type        PhotoType
+  url         String
+  storageKey  String
+  caption     String?
+  uploadedBy  String
+  createdAt   DateTime    @default(now())
+}
+
+model RepairNote {
+  id           String       @id @default(cuid())
+  repairJobId  String
+  repairJob    RepairJob    @relation(fields: [repairJobId], references: [id], onDelete: Cascade)
+  technicianId String?
+  technician   Technician?  @relation(fields: [technicianId], references: [id])
+  type         NoteType
+  note         String       @db.Text
+  createdBy    String
+  createdAt    DateTime     @default(now())
+}
+
+model SparePart {
+  id            String          @id @default(cuid())
+  partName      String
+  sku           String          @unique
+  quantity      Int             @default(0)
+  lowStockLevel Int             @default(5)
+  purchaseCost  Decimal         @db.Decimal(12, 2)
+  sellingPrice  Decimal         @db.Decimal(12, 2)
+  supplier      String?
+  branchId      String
+  branch        Branch          @relation(fields: [branchId], references: [id])
+  movements     StockMovement[]
+  jobUsage      JobPartUsage[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+model StockMovement {
+  id          String            @id @default(cuid())
+  sparePartId String
+  sparePart   SparePart         @relation(fields: [sparePartId], references: [id], onDelete: Cascade)
+  type        StockMovementType
+  quantity    Int
+  unitCost    Decimal?          @db.Decimal(12, 2)
+  reason      String?
+  createdBy   String
+  createdAt   DateTime          @default(now())
+}
+
+model JobPartUsage {
+  id          String    @id @default(cuid())
+  repairJobId String
+  repairJob   RepairJob @relation(fields: [repairJobId], references: [id], onDelete: Cascade)
+  sparePartId String
+  sparePart   SparePart @relation(fields: [sparePartId], references: [id])
+  quantity    Int
+  unitPrice   Decimal   @db.Decimal(12, 2)
+  createdBy   String
+  createdAt   DateTime  @default(now())
+}
+
+model Invoice {
+  id              String        @id @default(cuid())
+  invoiceNumber   String        @unique
+  repairJobId     String        @unique
+  repairJob       RepairJob     @relation(fields: [repairJobId], references: [id])
+  customerId      String
+  customer        Customer      @relation(fields: [customerId], references: [id])
+  branchId        String
+  branch          Branch        @relation(fields: [branchId], references: [id])
+  laborCharges    Decimal       @db.Decimal(12, 2)
+  sparePartsTotal Decimal       @db.Decimal(12, 2)
+  tax             Decimal       @db.Decimal(12, 2)
+  discount        Decimal       @db.Decimal(12, 2)
+  grandTotal      Decimal       @db.Decimal(12, 2)
+  paidAmount      Decimal       @default(0) @db.Decimal(12, 2)
+  paymentMethod   PaymentMethod?
+  paymentStatus   PaymentStatus @default(UNPAID)
+  issuedAt        DateTime      @default(now())
+  dueAt           DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model WarrantyClaim {
+  id          String              @id @default(cuid())
+  repairJobId String
+  repairJob   RepairJob           @relation(fields: [repairJobId], references: [id])
+  claimNumber String              @unique
+  issue       String              @db.Text
+  status      WarrantyClaimStatus @default(OPEN)
+  resolution  String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+}
+
+model NotificationTemplate {
+  id        String              @id @default(cuid())
+  eventKey  String
+  channel   NotificationChannel
+  subject   String?
+  body      String              @db.Text
+  isActive  Boolean             @default(true)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  @@unique([eventKey, channel])
+}
+
+model Notification {
+  id          String              @id @default(cuid())
+  customerId  String
+  customer    Customer            @relation(fields: [customerId], references: [id])
+  repairJobId String?
+  repairJob   RepairJob?          @relation(fields: [repairJobId], references: [id])
+  channel     NotificationChannel
+  destination String
+  subject     String?
+  message     String              @db.Text
+  status      NotificationStatus  @default(PENDING)
+  sentAt      DateTime?
+  error       String?
+  createdAt   DateTime            @default(now())
+}
+
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+}
